@@ -48,7 +48,9 @@ Example
 
 <user2> mooo
 <bot> Moo Moo Moo!
+
 <user2> !moocount
+
 <bot> (via PM): You have mooed 1 time.
 
     
