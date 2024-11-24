@@ -38,20 +38,6 @@ Once the plugin is installed and your bot is running, users in the channel can s
     !topmoo: Shows the top 20 users by moo count. (depending on the Sopel trigger)
     !moocount: Get your personal moo count via private message. (depending on the Sopel trigger)
 
-Example
-
-      
-
-<user1> moo
-<bot> Mooooooo!
-<bot> Welcome user1! That's your first moo!
-
-<user2> mooo
-<bot> Moo Moo Moo!
-
-<user2> !moocount
-
-<bot> (via PM): You have mooed 1 time.
 
     
 
