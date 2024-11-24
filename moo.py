@@ -68,12 +68,33 @@ def setup(bot):
     logger.debug("Setting up the moo plugin.")
 
 # Moo responses with variations
-moos = [
-    'Moo', 'Moooo', 'Moooooo', 'Mooooooo', 'Mooooo!', 'Moo?', 'Moooooo...', 'Moo Moo', 'MOOOO!',
-    'Moooooo... Moo?', 'Moooooooo!', 'mOoOoO', 'Mooooooooooooooooo!', 'Mooing intensely!', 
-    'Moo-fantastic!', 'Moo Moo Moo!', 'Mooooooooooow!', 'Moo, but dramatic', 'Mini-moo', 'Mega-MOO', 
-    'SuperMoo!', 'Moo-mendous!', 'Moo-tacular!', 'Moo-yay!', 'Moo-verload!', 'Moo-mazing!', 
-    'Moo-velous!', 'Moo-nificent!', 'Moo-rific!', 'Moo-valanche!', 'Moo-tropolis!', 'Moo-gantic!', 
+moos = [ 
+    'Moo', 'Moooo', 'Moooooo', 'Mooooooo', 'Mooooo!', 'Moo?', 'Moooooo...',
+    'Moo Moo', 'MOOOO!', 'Moooooo... Moo?', 'Moooooooo!', 'mOoOoO',
+    'Mooooooooooooooooo!', 'Mooing intensely!', 'Moo-fantastic!', 
+    'Moo Moo Moo!', 'Mooooooooooow!', 'Moo, but dramatic', 'Mini-moo', 
+    'Mega-MOO', 'SuperMoo!', 'Moo-mendous!', 'Moo-tacular!', 'Moo-yay!', 
+    'Moo-verload!', 'Moo-mazing!', 'Moo-velous!', 'Moo-nificent!', 
+    'Moo-rific!', 'Moo-valanche!', 'Moo-tropolis!', 'Moo-gantic!', 
+    'Mooooo! (urgent)', 'MOOOO, REPEAT:', 'MOOOOO', 'MOOOOOO...', 
+    'MOOOOOOO', 'Moooooo?!', 'Meeee-mooo!', 'meh-mooooo.', 'MMOOOOO', 
+    'Moooo...?', 'MOOOOOOOOO', 'moOOOo...', 'MoooOOO', 'MoooOOoo', 
+    'MOOOOOM:', 'MOOOOMMmmm',
+    # New responses
+    'Moo-tastic surprise!', 'Moo-zilla is here!', 'Moooooooh, yeah!', 
+    'Moo with a twist!', 'Moooo-delicious!', 'Moo-nlight serenade!', 
+    'Moo-rific explosion!', 'Moo-sical note!', 'Moo-larious!', 
+    'Moooo from the deep!', 'Moo-vie star!', 'Moo-tanical gardens!', 
+    'Moo-phoria!', 'Moo-sational!', 'Moo-ment of truth!', 
+    'Moo-nicorn flair!', 'Moo-nificent vibes!', 'Moo-tion detected!', 
+    'Moo-tion graphics!', 'Moo-lecular structure!', 'Moo-calypse now!', 
+    'Moo-rning sunshine!', 'Moo-dinary day!', 'Moo-ving forward!', 
+    'Moo-licious treat!', 'Mooooo-rific journey!', 'Moo-oh-la-la!', 
+    'Moo-tiful dreams!', 'Moo-ment of glory!', 'Moo-tivation station!', 
+    'Moo-rvelous creation!', 'Moo-emorial day!', 'Moo-tion picture!', 
+    'Mooooove over!', 'Moo-stache power!', 'Moo-style icon!', 
+    'Moo-sical chairs!', 'Moo-ble in space!', 'Moo-nkin’ around!', 
+    'Moo-mentous occasion!', 'Mooo are the champions!'
 ]
 
 # Moo response with improved regex handling
