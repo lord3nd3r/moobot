@@ -26,6 +26,8 @@ Installation
 Configuration
 
 No additional configuration is required for this plugin. It automatically sets up the database and starts tracking users' moo counts when activated.
+
+
 Usage
 
 Once the plugin is installed and your bot is running, users in the channel can start typing "moo" to interact with the bot. You can use the following commands:
