@@ -1,6 +1,8 @@
 Sopel Moo Counter Plugin
 
 This plugin for the Sopel IRC bot adds fun responses to any variations of "moo" that users type in chat while also tracking the number of times each user has said "moo."
+
+
 Features
 
     Responds with a random "moo" variation when users type any form of "moo" in the channel.
@@ -22,6 +24,7 @@ Installation
     Copy the plugin file to your Sopel bot's plugin directory, typically located at ~/.sopel/plugins/.
     Ensure the plugin is recognized by adding it to the sopel.cfg file under the [core] section (if needed).
     Restart your Sopel bot to load the plugin.
+
 
 Configuration
 
