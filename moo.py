@@ -122,14 +122,17 @@ def mootop(bot, trigger):
         return
 
     message = "Top Moos:"
+    logger.debug(f"Preparing message with {len(rows)} entries")
     for nick, count in rows:
         entry = f" {nick}: {count},"
         if len(message + entry) > 400:
             bot.say(message.rstrip(','), trigger.sender)
+            logger.debug(f"Sent partial message: {message.rstrip(',')}")
             message = entry.strip()
         else:
             message += entry
     bot.say(message.rstrip(','), trigger.sender)
+    logger.debug(f"Sent final message: {message.rstrip(',')}")
 
 # Command to show the user's own moo count privately (via PM)
 @plugin.command('moocount', 'mymoo')
@@ -137,7 +140,7 @@ def moocount(bot, trigger):
     logger.debug(f"Triggered moocount for {trigger.nick}.")
     count = db_helper(bot, trigger.nick.lower())
     if count >= 0:
-        bot.notice(trigger.nick, f"You have mooed {count} times.")
+        bot.notice(f"You have mooed {count} times.", trigger.nick)  # Corrected order
         logger.debug(f"Sent notice to {trigger.nick} with their moo count: {count}")
     else:
-        bot.notice(trigger.nick, f"Sorry {trigger.nick}, I'm having trouble accessing your moo count right now.")
+        bot.notice(f"Sorry {trigger.nick}, I'm having trouble accessing your moo count right now.", trigger.nick)  # Corrected order
