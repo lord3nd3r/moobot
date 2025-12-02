@@ -139,8 +139,19 @@ moos = [
     'Moo-mentous occasion!', 'Mooo are the champions!',
     'Moo-hemian Rhapsody!', 'Is this the real moo?', 'Moo-ntain high!',
     'Moo-dern art!', 'Moo-tant ninja cow!', 'Moo-llennium falcon!',
-    'Moo-nt Everest climbed!', 'Moo-dini escapes!', 'Moo-ving at light speed!'
+    'Moo-nt Everest climbed!', 'Moo-dini escapes!', 'Moo-ving at light speed!',
+
+    # Extra fresh moos:
+    'Moo-fi powered!', 'Moo-LAN party!', '404: Moo not found',
+    'Moochacho!', 'Moo in progress…', 'Moo-ltiverse unlocked!',
+    'MooOS rebooting...', 'Moo++', 'Segmoo fault (core dumped)',
+    'Moo.exe has stopped responding', 'sudo moo', 'Moo over IPv6!',
+    'Live, laugh, moo', 'Powered by pure moo', 'Moo on the rocks',
+    'Quantum moo observed!', 'Schrödingcow says moo and not-moo',
+    'Moo-nshot achieved!', 'Moo-mentum is high!', 'Moo-stream online!'
 ]
+
+MOO_PATTERN = re.compile(r'\b(m+o+)\b', re.IGNORECASE)
 
 # === MOO TRIGGER ===
 @plugin.rule(r'\b(m+o+)\b')
@@ -150,8 +161,8 @@ def moo_response(bot, trigger):
     if not nick or nick.lower() == bot.nick.lower():
         return
 
-    pattern = re.compile(r'\b(m+o+)\b', re.IGNORECASE)
-    if not pattern.search(trigger.group(0)):
+    # Rule guarantees a match, but keep a cheap sanity check:
+    if not MOO_PATTERN.search(trigger.group(0)):
         return
 
     bot.say(random.choice(moos))
@@ -165,20 +176,25 @@ def moo_response(bot, trigger):
     else:
         bot.say(f"Sorry {nick}, something went wrong with your moo count.")
 
-# === TOP MOOERS ===
-@plugin.command('mootop', 'topmoo')
-def mootop(bot, trigger):
-    logger.debug("Triggered mootop")
+# === INTERNAL: SHOW TOP MOOERS (generic helper) ===
+def _show_top(bot, trigger, limit):
+    logger.debug(f"Triggered mootop (limit={limit})")
     try:
         if has_session(bot):
             with bot.db.session() as session:
                 rows = session.execute(
-                    text('SELECT nick, count FROM moo_counts ORDER BY count DESC, nick ASC LIMIT 20')
+                    text('SELECT nick, count FROM moo_counts '
+                         'ORDER BY count DESC, nick ASC LIMIT :limit'),
+                    {'limit': limit}
                 ).fetchall()
         else:
             conn = bot.db.connect()
             cursor = conn.cursor()
-            cursor.execute('SELECT nick, count FROM moo_counts ORDER BY count DESC, nick ASC LIMIT 20')
+            cursor.execute(
+                'SELECT nick, count FROM moo_counts '
+                'ORDER BY count DESC, nick ASC LIMIT ?',
+                (limit,)
+            )
             rows = cursor.fetchall()
             conn.close()
     except Exception as e:
@@ -190,20 +206,39 @@ def mootop(bot, trigger):
         bot.say("No one has mooed yet! Be the first!")
         return
 
-    message = "Top 20 Moos:"
+    header = f"Top {limit} Moos:"
+    message = header
     for nick, count in rows:
+        # Skip bot itself if it somehow got a record
         if nick.lower() == bot.nick.lower():
             continue
         entry = f" {nick}: {count},"
         if len(message + entry) > 400:
             bot.say(message.rstrip(','), trigger.sender)
-            message = " " + entry.strip()
+            message = "Continued:" + entry
         else:
             message += entry
+
     bot.say(message.rstrip(','), trigger.sender)
 
+# === TOP 20 MOOERS (DEFAULT) ===
+@plugin.commands('mootop', 'topmoo')
+def mootop(bot, trigger):
+    # Anyone can use this
+    _show_top(bot, trigger, 20)
+
+# === TOP 10 MOOERS ===
+@plugin.commands('mootop10', 'topmoo10')
+def mootop10(bot, trigger):
+    _show_top(bot, trigger, 10)
+
+# === TOP 5 MOOERS ===
+@plugin.commands('mootop5', 'topmoo5')
+def mootop5(bot, trigger):
+    _show_top(bot, trigger, 5)
+
 # === USER MOO COUNT (PM) ===
-@plugin.command('moocount', 'mymoo')
+@plugin.commands('moocount', 'mymoo')
 def moocount(bot, trigger):
     count = db_helper(bot, trigger.nick)
     if count >= 0:
@@ -213,20 +248,20 @@ def moocount(bot, trigger):
         bot.notice(trigger.nick, "Sorry, I couldn't retrieve your moo count.")
 
 # === TOTAL MOO STATS ===
-@plugin.command('totalmoo', 'moostats')
+@plugin.commands('totalmoo', 'moostats')
 def totalmoo(bot, trigger):
     try:
         if has_session(bot):
             with bot.db.session() as session:
                 total = session.execute(text('SELECT SUM(count) FROM moo_counts')).scalar() or 0
-                users = session.execute(text('SELECT COUNT(nick) FROM moo_counts')).scalar()
+                users = session.execute(text('SELECT COUNT(nick) FROM moo_counts')).scalar() or 0
         else:
             conn = bot.db.connect()
             cursor = conn.cursor()
             cursor.execute('SELECT SUM(count) FROM moo_counts')
             total = cursor.fetchone()[0] or 0
             cursor.execute('SELECT COUNT(nick) FROM moo_counts')
-            users = cursor.fetchone()[0]
+            users = cursor.fetchone()[0] or 0
             conn.close()
         plural = 'cow' if users == 1 else 'cows'
         bot.say(f"Total moos: {total} by {users} {plural}!")
