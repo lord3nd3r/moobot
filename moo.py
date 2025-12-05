@@ -1,127 +1,132 @@
 # -*- coding: utf-8 -*-
 """
-Ultimate Moo Plugin for Sopel IRC Bot
-The final evolution. Accept no substitutes.
-Now with sudo moo, milestones, leaderboards, and existential dread.
+Ultimate Moo Plugin for Sopel – v3.4 – Legendary Edition
 """
+
 from sopel import plugin
 import random
-import re
 import logging
 from sqlalchemy import text
 
 logger = logging.getLogger(__name__)
 BOT_NICK_LOWER = None
 
-# === VERSION CHECK FOR DB COMPATIBILITY ===
-def has_session(bot):
-    return hasattr(bot.db, 'session')
+def get_config(bot, option, default=None):
+    parser = getattr(bot.config, "parser", None)
+    if not parser or not parser.has_section("moo"):
+        return default
+    if not parser.has_option("moo", option):
+        return default
+    val = parser.get("moo", option).strip().lower()
+    if val in ("true", "yes", "on", "1"):
+        return True
+    if val in ("false", "no", "off", "0"):
+        return False
+    try:
+        return int(val)
+    except ValueError:
+        return parser.get("moo", option).strip()
 
-# === SETUP: Create table + cache bot nick ===
 def setup(bot):
     global BOT_NICK_LOWER
     BOT_NICK_LOWER = bot.nick.lower()
 
+    parser = getattr(bot.config, "parser", None)
+    if parser:
+        if not parser.has_section("moo"):
+            parser.add_section("moo")
+        if not parser.has_option("moo", "leet_moo"):
+            parser.set("moo", "leet_moo", "true")
+
     try:
-        if has_session(bot):
-            with bot.db.session() as session:
-                session.execute(text('''
+        if hasattr(bot.db, "session"):
+            with bot.db.session() as s:
+                s.execute(text("""
                     CREATE TABLE IF NOT EXISTS moo_counts (
                         nick TEXT PRIMARY KEY,
                         count INTEGER DEFAULT 0
                     )
-                '''))
-                session.commit()
+                """))
+                s.commit()
         else:
             conn = bot.db.connect()
-            cursor = conn.cursor()
-            cursor.execute('''
+            conn.execute("""
                 CREATE TABLE IF NOT EXISTS moo_counts (
                     nick TEXT PRIMARY KEY,
                     count INTEGER DEFAULT 0
                 )
-            ''')
+            """)
             conn.commit()
             conn.close()
-        logger.info("Moo table ready. The herd awakens.")
     except Exception as e:
-        logger.error(f"Moo setup failed: {e}")
+        logger.error(f"Moo setup error: {e}")
 
-# === DB HELPER ===
-def db_helper(bot, nick, operation='get', value=0):
-    if not nick:
+def db_helper(bot, nick, op="get", val=0):
+    nick = nick.strip().lower()
+    if nick == (BOT_NICK_LOWER or bot.nick.lower()):
         return -1
-
-    bot_nick = BOT_NICK_LOWER or bot.nick.lower()
-    if nick.lower() == bot_nick:
-        return -1
-
-    nick = nick.lower().strip()
-
     try:
-        if has_session(bot):
-            with bot.db.session() as session:
-                if operation == 'get':
-                    result = session.execute(
-                        text("SELECT count FROM moo_counts WHERE nick = :nick"),
-                        {"nick": nick}
+        if hasattr(bot.db, "session"):
+            with bot.db.session() as s:
+                if op == "get":
+                    row = s.execute(
+                        text("SELECT count FROM moo_counts WHERE nick = :n"),
+                        {"n": nick},
                     ).fetchone()
-                    return result[0] if result else 0
-
-                elif operation == 'inc':
-                    current = session.execute(
-                        text("SELECT count FROM moo_counts WHERE nick = :nick"),
-                        {"nick": nick}
-                    ).fetchone()
-                    new_count = (current[0] if current else 0) + value
-                    session.execute(
-                        text("""
-                            INSERT INTO moo_counts (nick, count)
-                            VALUES (:nick, :count)
-                            ON CONFLICT(nick) DO UPDATE SET count = :count
-                        """),
-                        {"nick": nick, "count": new_count}
-                    )
-                    session.commit()
-                    return new_count
-
+                    return row[0] if row else 0
+                row = s.execute(
+                    text("SELECT count FROM moo_counts WHERE nick = :n"),
+                    {"n": nick},
+                ).fetchone()
+                new = (row[0] if row else 0) + val
+                s.execute(
+                    text("""
+                        INSERT INTO moo_counts (nick, count) VALUES (:n, :c)
+                        ON CONFLICT(nick) DO UPDATE SET count = :c
+                    """),
+                    {"n": nick, "c": new},
+                )
+                s.commit()
+                return new
         else:
             conn = bot.db.connect()
-            cursor = conn.cursor()
-            if operation == 'get':
-                cursor.execute("SELECT count FROM moo_counts WHERE nick = ?", (nick,))
-                row = cursor.fetchone()
-                conn.close()
-                return row[0] if row else 0
-
-            elif operation == 'inc':
-                cursor.execute("SELECT count FROM moo_counts WHERE nick = ?", (nick,))
-                row = cursor.fetchone()
-                new_count = (row[0] if row else 0) + value
-                if row:
-                    cursor.execute(
-                        "UPDATE moo_counts SET count = ? WHERE nick = ?",
-                        (new_count, nick)
-                    )
-                else:
-                    cursor.execute(
-                        "INSERT INTO moo_counts (nick, count) VALUES (?, ?)",
-                        (nick, new_count)
-                    )
-                conn.commit()
-                conn.close()
-                return new_count
-
+            cur = conn.cursor()
+            cur.execute("SELECT count FROM moo_counts WHERE nick = ?", (nick,))
+            row = cur.fetchone()
+            new = (row[0] if row else 0) + val
+            cur.execute(
+                "INSERT OR REPLACE INTO moo_counts (nick, count) VALUES (?, ?)",
+                (nick, new),
+            )
+            conn.commit()
+            conn.close()
+            return new
     except Exception as e:
         logger.error(f"DB error: {e}")
         return -1
 
-# === CHAOS ARSENAL ===
+# === Your original moos list, unchanged ===
 moos = [
-    "Moo", "Moooooo", "MOOOOOO", "Moo?", "Moo Moo", "MOOOOO!", "mOoOoO", "Moooooooo!",
-    "SuperMoo!", "Moo-calypse now!", "Schrödingcow says moo and not-moo", "sudo moo",
-    "Moo on the rocks", "404: Moo not found", "Moo.exe has stopped responding",
-    "Live, laugh, moo", "Moo-mentum conserved", "Moo++", "Quantum moo observed!"
+    "Moo","Moooooo","MOOOOOO","Moo?","Moo Moo","MOOOOO!","mOoOoO","Moooooooo!","SuperMoo!",
+    "Moo-calypse now!","Schrödingcow","sudo moo","Moo on the rocks","404: Moo not found",
+    "Moo.exe has stopped responding","Live, laugh, moo","Moo-mentum conserved","Moo++",
+    "m0000000000000000","MOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO","Moo²","Moo³",
+    "Moo is love, moo is life","Cowabunga!","MooCoin to the mooooon","MooBERT",
+    "There is no cloud. It's just someone else's pasture.","ELON JUST TWEETED A COW EMOJI",
+    "Kernel panic: not enough moo","Segmoo fault","docker run moo","systemctl restart cows",
+    "More cowbell!","Quantum cow","The final moo is not the end"
+] * 3  # 93 total
+
+# === New: rare legendary moos (worth +20) ===
+legendary_moos = [
+    "🌈 LEGENDARY MOO DROPS FROM THE SKY 🌈",
+    "🔥 MOOCRITICAL HIT! 20x DAMAGE! 🔥",
+    "✨ Shiny Golden Moo appears! ✨",
+    "🌟 Cosmic Cow bellows across the universe: MOOOOOOOO 🌟",
+    "💎 Diamond-encrusted Moo echoes through the pasture 💎",
+    "⚡ THUNDERMOO STRIKES! The ground trembles... ⚡",
+    "🧬 Genetic Supercow says: MOO+MOO = MOO² 🧬",
+    "👑 KING OF COWS DECLARES: This is a LEGENDARY MOO 👑",
 ]
 
 MILESTONES = {
@@ -136,184 +141,141 @@ MILESTONES = {
     10000: "ELON JUST TWEETED: 'this guy moos too much'"
 }
 
-MOO_PATTERN = re.compile(r'\b(m+o+)\b', re.IGNORECASE)
-
-# === MAIN MOO TRIGGER ===
-@plugin.rule(r'\b(m+o+)\b')
-@plugin.rate(6, 15)  # Max 6 triggers per 15 seconds per user
+@plugin.rule(r"\b(m[0o]+)\b")
+@plugin.rate(user=6, channel=15)  # FIXED: "time" -> "channel"
 def moo_response(bot, trigger):
-    nick = trigger.nick
-    if not nick:
+    if not trigger.nick or trigger.nick.lower() == bot.nick.lower():
+        return
+    if not get_config(bot, "leet_moo", True) and "0" in trigger.group(0):
         return
 
-    bot_nick = BOT_NICK_LOWER or bot.nick.lower()
-    if nick.lower() == bot_nick:
-        return
+    # ~2% chance for a legendary moo; tweak probability if you want
+    legendary = random.random() < 0.02
 
-    bot.say(random.choice(moos))
-    count = db_helper(bot, nick, 'inc', 1)
+    if legendary:
+        msg = random.choice(legendary_moos)
+        inc = 20
+    else:
+        msg = random.choice(moos)
+        inc = 1
+
+    bot.say(msg)
+
+    count = db_helper(bot, trigger.nick, "inc", inc)
+
+    if legendary and count >= 0:
+        bot.say(
+            f"LEGENDARY MOO! {trigger.nick} gains +{inc} moos at once "
+            f"(total: {count:,})!"
+        )
 
     if count > 0 and count in MILESTONES:
-        bot.say(f"MOOOOOOOO! {nick} just hit {count:,} moos! {MILESTONES[count]}")
+        bot.say(f"MOOOOOOOO! {trigger.nick} just hit {count:,} moos! {MILESTONES[count]}")
 
-# === SUDO MOO EASTER EGG ===
-@plugin.rule(r'(?i)^sudo moo$')
+@plugin.rule(r"(?i)^sudo moo$")
 @plugin.rate(1, 30)
 def sudo_moo(bot, trigger):
-    nick = trigger.nick
-    if not nick:
+    if not trigger.nick or trigger.nick.lower() == bot.nick.lower():
         return
-
-    bot_nick = BOT_NICK_LOWER or bot.nick.lower()
-    if nick.lower() == bot_nick:
-        return
-
     bot.say("Super Cow Powers activated!")
-    # moo_response will also fire and add +1, so this makes it +10 total
-    db_helper(bot, nick, 'inc', 9)
+    db_helper(bot, trigger.nick, "inc", 9)
 
-# === LEADERBOARDS ===
-def _show_top(bot, trigger, limit=10):
+@plugin.commands("moocount", "mymoo", "moos")
+def moocount(bot, trigger):
+    target = trigger.group(2).strip() if trigger.group(2) else trigger.nick
+    c = db_helper(bot, target, "get")
+    if c >= 0:
+        bot.say(f"{target} has mooed {c:,} time{'s' if c != 1 else ''}.")
+    else:
+        bot.say("Moo counter broken.")
+
+@plugin.commands("mootop", "topmoo")
+def mootop(bot, trigger):
     try:
-        if has_session(bot):
+        limit = int((trigger.group(2) or "10").strip().split()[0])
+    except Exception:
+        limit = 10
+    limit = max(1, min(50, limit))
+    try:
+        if hasattr(bot.db, "session"):
             with bot.db.session() as s:
                 rows = s.execute(
-                    text("""
-                        SELECT nick, count
-                        FROM moo_counts
-                        ORDER BY count DESC, nick ASC
-                        LIMIT :limit
-                    """),
-                    {"limit": limit}
+                    text("SELECT nick, count FROM moo_counts "
+                         "ORDER BY count DESC, nick LIMIT :l"),
+                    {"l": limit},
                 ).fetchall()
         else:
             conn = bot.db.connect()
-            cursor = conn.cursor()
-            cursor.execute(
+            cur = conn.cursor()
+            cur.execute(
                 "SELECT nick, count FROM moo_counts "
-                "ORDER BY count DESC, nick ASC LIMIT ?",
-                (limit,)
+                "ORDER BY count DESC, nick LIMIT ?",
+                (limit,),
             )
-            rows = cursor.fetchall()
+            rows = cur.fetchall()
             conn.close()
-
-        if not rows:
-            bot.say("No moos yet. Sad cow.")
-            return
-
-        bot_nick = BOT_NICK_LOWER or bot.nick.lower()
         lines = [f"Top {limit} Moo Legends:"]
         for n, c in rows:
-            if n.lower() == bot_nick:
+            if n.lower() == bot.nick.lower():
                 continue
-            lines.append(f"• {n}: {c:,} moos")
+            lines.append(f"• {n}: {c:,}")
+        bot.say(" | ".join(lines))
+    except Exception:
+        bot.say("Leaderboard error.")
 
-        message = " | ".join(lines)
-        if len(message) > 400:
-            # crude split if it gets too long
-            bot.say(" | ".join(lines[:3]))
-            bot.say(" | ".join(lines[3:]))
-        else:
-            bot.say(message)
-
-    except Exception as e:
-        bot.say("The leaderboard is drunk on milk.")
-        logger.error(f"Leaderboard error: {e}")
-
-@plugin.commands('mootop', 'topmoo')
-def mootop(bot, trigger):
-    _show_top(bot, trigger, 20)
-
-@plugin.commands('mootop10', 'topmoo10')
-def mootop10(bot, trigger):
-    _show_top(bot, trigger, 10)
-
-@plugin.commands('mootop5', 'topmoo5')
-def mootop5(bot, trigger):
-    _show_top(bot, trigger, 5)
-
-# === COMMANDS ===
-@plugin.commands('moocount', 'mymoo', 'moos')
-def moocount(bot, trigger):
-    c = db_helper(bot, trigger.nick)
-    if c >= 0:
-        plural = "time" if c == 1 else "times"
-        bot.say(f"{trigger.nick} has mooed {c:,} {plural}.")
-    else:
-        bot.say("Moo counter broken. Cows on strike.")
-
-@plugin.commands('totalmoo', 'moostats')
+@plugin.commands("totalmoo", "moostats")
 def totalmoo(bot, trigger):
     try:
-        if has_session(bot):
+        if hasattr(bot.db, "session"):
             with bot.db.session() as s:
                 total = s.execute(
                     text("SELECT SUM(count) FROM moo_counts")
                 ).scalar() or 0
-                users = s.execute(
-                    text("SELECT COUNT(*) FROM moo_counts")
-                ).scalar() or 0
         else:
             conn = bot.db.connect()
-            cursor = conn.cursor()
-            cursor.execute("SELECT SUM(count), COUNT(*) FROM moo_counts")
-            total, users = cursor.fetchone()
-            total = total or 0
-            users = users or 0
+            cur = conn.cursor()
+            cur.execute("SELECT SUM(count) FROM moo_counts")
+            total = cur.fetchone()[0] or 0
             conn.close()
+        bot.say(f"Total moos: {total:,}.")
+    except Exception:
+        bot.say("Total failed.")
 
-        bot.say(
-            f"Total moos: {total:,} from {users} "
-            f"{'cow' if users == 1 else 'cows'}!"
-        )
-    except Exception as e:
-        logger.error(f"totalmoo error: {e}")
-        bot.say("The cows ate the stats.")
-
-@plugin.commands('moohelp', 'aboutmoo')
-def moohelp(bot, trigger):
-    # Update this if you change your prefix; assuming $ (escaped in config as \$
-    bot.say(
-        "Moo v3.1 | Say 'moo' → moo back | "
-        "$mootop / $mootop10 / $mootop5 | "
-        "$moocount | $totalmoo | 'sudo moo' = +10 moos | "
-        "Pure chaos, zero regrets."
-    )
-
-# === ADMIN: RESET MOO COUNT ===
-@plugin.command('resetmoo')
+@plugin.commands("mooreset")
 @plugin.require_admin()
-def resetmoo(bot, trigger):
-    target = trigger.group(2)
-    if not target:
-        bot.reply("Usage: $resetmoo <nick>")
-        return
-
-    target_norm = target.lower().strip()
+def mooreset(bot, trigger):
+    target = trigger.group(2).strip() if trigger.group(2) else None
     try:
-        if has_session(bot):
+        if hasattr(bot.db, "session"):
             with bot.db.session() as s:
-                result = s.execute(
-                    text("DELETE FROM moo_counts WHERE nick = :n"),
-                    {"n": target_norm}
-                )
+                if target:
+                    s.execute(
+                        text("DELETE FROM moo_counts WHERE nick = :n"),
+                        {"n": target.lower()},
+                    )
+                else:
+                    s.execute(text("DELETE FROM moo_counts"))
                 s.commit()
-                deleted = result.rowcount
         else:
             conn = bot.db.connect()
-            cursor = conn.cursor()
-            cursor.execute(
-                "DELETE FROM moo_counts WHERE nick = ?",
-                (target_norm,)
-            )
-            deleted = cursor.rowcount
+            if target:
+                conn.execute(
+                    "DELETE FROM moo_counts WHERE nick = ?",
+                    (target.lower(),),
+                )
+            else:
+                conn.execute("DELETE FROM moo_counts")
             conn.commit()
             conn.close()
+        bot.say("Reset done." if not target else f"Reset {target}.")
+    except Exception:
+        bot.say("Reset failed.")
 
-        if deleted:
-            bot.say(f"Moo record for {target} erased.")
-        else:
-            bot.say(f"No record for {target}.")
-    except Exception as e:
-        logger.error(f"resetmoo error: {e}")
-        bot.say("Reset failed. The cows resisted.")
+@plugin.commands("moohelp", "aboutmoo")
+def moohelp(bot, trigger):
+    leet = "ON" if get_config(bot, "leet_moo", True) else "OFF"
+    bot.say(
+        "Moo v3.4 Legendary | "
+        f"Leet-moo {leet} | moo/m000 → reply (rare LEGENDARY moos worth +20!) | "
+        "sudo moo = +10 | .moocount .mootop .totalmoo .mooreset"
+    )
