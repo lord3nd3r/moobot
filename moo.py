@@ -5,9 +5,16 @@ Ultimate Moo Plugin for Sopel – v3.8 – Legendary Edition
 - sudo moo: once/hour per user per channel
 - Global & per-channel stats and leaderboards
 - moohelp PM-only with all commands + aliases listed
-- NEW: /me moos increments moo count with no cooldown
+- /me moos increments moo count with no cooldown
 
-✨ This version has prettier, emoji-rich output styled like karma.py. ✨
+✨ Prettier, emoji-rich output styled like karma.py. ✨
+
+FIXES APPLIED (Sopel 8.0.4):
+✅ Prevent `sudo moo` (and whitespace variants) from triggering generic moo detector (no double count/output)
+✅ Legacy DB setup uses IF NOT EXISTS (reload-safe)
+✅ Session upserts use `excluded` for better portability
+✅ sudo moo uses shared increment logic (milestones still fire) without random moo output
+✅ Added 8 more Linux/terminal moos to the `moos` list (total: 16 linux moos)
 """
 
 from sopel import plugin
@@ -17,13 +24,15 @@ import time
 from sqlalchemy import text
 
 logger = logging.getLogger(__name__)
+# Bot nick (set at setup)
 BOT_NICK_LOWER = None
 
+# Default behavior values (can be overridden from the `moo` config section)
 # Cooldowns (seconds)
 MOO_COOLDOWN = 6         # moo cooldown
 SUDO_COOLDOWN = 3600     # sudo moo cooldown (1 hour)
 
-# Legendary moo chance
+# Legendary moo chance (0.0 - 1.0)
 LEGENDARY_CHANCE = 0.02
 
 # Use monotonic clock for cooldowns
@@ -73,6 +82,7 @@ def get_config(bot, option, default=None):
 # --------------------------------------------------------------
 def setup(bot):
     global BOT_NICK_LOWER
+    global MOO_COOLDOWN, SUDO_COOLDOWN, LEGENDARY_CHANCE
     BOT_NICK_LOWER = bot.nick.lower()
 
     parser = getattr(bot.config, "parser", None)
@@ -81,6 +91,26 @@ def setup(bot):
             parser.add_section("moo")
         if not parser.has_option("moo", "leet_moo"):
             parser.set("moo", "leet_moo", "true")
+
+    # Load configurable settings from the config parser (if present).
+    try:
+        # Use get_config which returns int/bool when possible
+        MOO_COOLDOWN = int(get_config(bot, "moo_cooldown", MOO_COOLDOWN))
+    except Exception:
+        logger.exception("Invalid moo_cooldown in config; using default")
+        MOO_COOLDOWN = MOO_COOLDOWN
+
+    try:
+        SUDO_COOLDOWN = int(get_config(bot, "sudo_cooldown", SUDO_COOLDOWN))
+    except Exception:
+        logger.exception("Invalid sudo_cooldown in config; using default")
+        SUDO_COOLDOWN = SUDO_COOLDOWN
+
+    try:
+        LEGENDARY_CHANCE = float(get_config(bot, "legendary_chance", LEGENDARY_CHANCE))
+    except Exception:
+        logger.exception("Invalid legendary_chance in config; using default")
+        LEGENDARY_CHANCE = LEGENDARY_CHANCE
 
     try:
         if hasattr(bot.db, "session"):
@@ -124,8 +154,8 @@ def setup(bot):
             """)
             conn.commit()
             conn.close()
-    except Exception as e:
-        logger.error(f"Moo setup error: {e}")
+    except Exception:
+        logger.exception("Moo setup error")
 
 
 # --------------------------------------------------------------
@@ -161,7 +191,7 @@ def db_helper(bot, nick, op="get", val=0):
                     text("""
                         INSERT INTO moo_counts (nick, count)
                         VALUES (:n, :c)
-                        ON CONFLICT(nick) DO UPDATE SET count = :c
+                        ON CONFLICT(nick) DO UPDATE SET count = excluded.count
                     """),
                     {"n": nick, "c": new}
                 )
@@ -191,7 +221,7 @@ def db_helper(bot, nick, op="get", val=0):
             return new
 
     except Exception as e:
-        logger.error(f"DB error (global): {e}")
+        logger.exception("DB error (global)")
         return -1
 
 
@@ -233,7 +263,7 @@ def db_helper_chan(bot, nick, channel, op="get", val=0):
                     text("""
                         INSERT INTO moo_counts_chan (nick, channel, count)
                         VALUES (:n, :c, :v)
-                        ON CONFLICT(nick, channel) DO UPDATE SET count = :v
+                        ON CONFLICT(nick, channel) DO UPDATE SET count = excluded.count
                     """),
                     {"n": nick, "c": channel, "v": new}
                 )
@@ -269,7 +299,7 @@ def db_helper_chan(bot, nick, channel, op="get", val=0):
             return new
 
     except Exception as e:
-        logger.error(f"DB error (channel): {e}")
+        logger.exception("DB error (channel)")
         return -1
 
 
@@ -290,8 +320,37 @@ moos = [
     "Kernel panic: not enough moo", "Segmoo fault",
     "docker run moo", "systemctl restart cows",
     "More cowbell!", "Quantum cow",
-    "The final moo is not the end"
-] * 3
+    "The final moo is not the end",
+
+    # linux nerd moos (original 16)
+    "moo@localhost:~$",
+    "sudo: moo: command not found",
+    "Segmentation moo (core dumped)",
+    "Permission denied: /dev/moo",
+    "dmesg | grep moo",
+    "systemd[1]: moo.service failed",
+    "kill -9 moo",
+    "Welcome to Moo GNU/Linux",
+    "bash: moo: No such file or pasture",
+    "apt install moo",
+    "pacman -S moo",
+    "make moo && make install",
+    "cron[1337]: (root) CMD (moo)",
+    "ssh moo@pasture.local",
+    "mount: /mnt/moo: bad supercow",
+    "OOM killer: killed process moo",
+
+    # 8 more linux nerd moos (added)
+    "journalctl -u moo.service -n 50",
+    "systemctl status moo.service",
+    "tail -f /var/log/moo.log",
+    "export MOOFLAGS='--verbose'",
+    "chmod +x /usr/bin/moo",
+    "ln -s /usr/bin/cowsay /usr/local/bin/moo",
+    "grep -R \"moo\" /etc 2>/dev/null",
+    "ps aux | awk '/moo/ {print $2}' | xargs kill",
+]
+
 
 legendary_moos = [
     "🌈 LEGENDARY MOO DROPS FROM THE SKY 🌈",
@@ -317,12 +376,13 @@ MILESTONES = {
 }
 
 
-def _handle_moo_increment(bot, nick, chan, legendary=None, say_response=True):
+def _handle_moo_increment(bot, nick, chan, legendary=None, say_response=True, inc_override=None):
     """
     Shared increment logic for moo triggers.
 
     legendary: if None, decide randomly; otherwise force True/False.
     say_response: if True, bot.say() a moo line.
+    inc_override: if not None, force increment amount (e.g. sudo moo +10)
     """
     legendary = (random.random() < LEGENDARY_CHANCE) if legendary is None else legendary
 
@@ -330,43 +390,43 @@ def _handle_moo_increment(bot, nick, chan, legendary=None, say_response=True):
         msg = random.choice(legendary_moos if legendary else moos)
         bot.say(msg)
 
-    inc = 20 if legendary else 1
+    if inc_override is not None:
+        inc = inc_override
+    else:
+        inc = 20 if legendary else 1
 
     # Global count
     g_count = db_helper(bot, nick, "inc", inc)
 
     # Per-channel count (only if in a real channel)
     if _is_channel(chan):
-        c_count = db_helper_chan(bot, nick, chan, "inc", inc)
-    else:
-        c_count = -1  # not used directly
+        db_helper_chan(bot, nick, chan, "inc", inc)
 
-    # Legendary + milestones messages
-    if legendary and g_count >= 0:
+    # Legendary message only for normal moo events (not sudo override)
+    if legendary and g_count >= 0 and inc_override is None:
         bot.say(
             f"🌈 LEGENDARY MOO! {nick} gains +{inc} moos "
             f"(🌐 total: {g_count:,})"
         )
 
-    if g_count in MILESTONES:
+    # Only announce milestones on valid (non-error) counts
+    if g_count > 0 and g_count in MILESTONES:
         bot.say(f"📈 Milestone unlocked for {nick} ({g_count:,} moos): {MILESTONES[g_count]}")
 
 
 # --------------------------------------------------------------
-# Moo detector (text)
+# Moo detector (text) — EXCLUDES "sudo moo" (incl whitespace variants)
 # --------------------------------------------------------------
-@plugin.rule(r"(?i)\b(m[0o]+)\b")
+@plugin.rule(r"(?i)^(?!\s*sudo\s+moo\s*$).*?\b(m[0o]+)\b")
 def moo_response(bot, trigger):
     if not trigger.nick or trigger.nick.lower() == bot.nick.lower():
         return
 
     chan = (trigger.sender or "").lower()
     nick = trigger.nick
-
     key = (chan, nick.lower())
 
     now = _time()
-    # prune old cooldown entries occasionally
     _prune_cooldowns(LAST_MOO, 3600)
 
     if now - LAST_MOO.get(key, 0) < MOO_COOLDOWN:
@@ -374,16 +434,19 @@ def moo_response(bot, trigger):
     LAST_MOO[key] = now
 
     # Ignore zero-moo when leet_moo is OFF
-    if not get_config(bot, "leet_moo", True) and "0" in trigger.group(0):
+    moo_token = (trigger.group(1) or "")
+    if not get_config(bot, "leet_moo", True) and "0" in moo_token:
         return
 
     _handle_moo_increment(bot, nick, chan, legendary=None, say_response=True)
 
 
 # --------------------------------------------------------------
-# NEW FEATURE: /me moos (ACTION) with NO cooldown
+# /me moos (ACTION) with NO cooldown
 # --------------------------------------------------------------
-@plugin.action_commands("moos")
+# Match CTCP ACTIONs like: /me moos  OR  /me moos! (allow simple punctuation)
+# Register common punctuation variants to avoid using unsupported decorators
+@plugin.action_commands("moos", "moos!", "moos?", "moos.")
 def moo_action(bot, trigger):
     """
     Handle /me moos (CTCP ACTION "moos") as a moo with no cooldown.
@@ -399,9 +462,9 @@ def moo_action(bot, trigger):
 
 
 # --------------------------------------------------------------
-# sudo moo (1/hour per user per channel)
+# sudo moo (1/hour per user per channel) — uses shared increment logic
 # --------------------------------------------------------------
-@plugin.rule(r"(?i)^sudo moo$")
+@plugin.rule(r"(?i)^\s*sudo\s+moo\s*$")
 def sudo_moo(bot, trigger):
     if not trigger.nick or trigger.nick.lower() == bot.nick.lower():
         return
@@ -411,7 +474,6 @@ def sudo_moo(bot, trigger):
     key = (chan, nick.lower())
 
     now = _time()
-    # prune old sudo cooldown entries occasionally
     _prune_cooldowns(LAST_SUDO, 86400)
 
     last = LAST_SUDO.get(key, 0)
@@ -429,18 +491,14 @@ def sudo_moo(bot, trigger):
     LAST_SUDO[key] = now
     bot.say("🐄⚡ Super Cow Powers activated! (+10 moos!)")
 
-    # Global increment
-    db_helper(bot, nick, "inc", 10)
-
-    # Per-channel increment if in a channel
-    if _is_channel(chan):
-        db_helper_chan(bot, nick, chan, "inc", 10)
+    # Shared increment: no random moo output; no legendary; +10
+    _handle_moo_increment(bot, nick, chan, legendary=False, say_response=False, inc_override=10)
 
 
 # --------------------------------------------------------------
 # .moocount / .mymoo / .moos
 # --------------------------------------------------------------
-@plugin.commands("moocount", "mymoo", "moos")
+@plugin.commands("moocount", "mymoo")
 def moocount(bot, trigger):
     arg = (trigger.group(2) or "").strip()
     target = arg or trigger.nick
@@ -505,11 +563,11 @@ def mootop_global(bot, trigger):
             bot.say("🏆 No moo legends yet.")
             return
 
-        # Karma-style pretty line
         line = " | ".join(f"{n} == {c:,}" for (n, c) in entries[:limit])
         bot.say(f"🏆 Global Moo Legends: {line}")
 
     except Exception:
+        logger.exception("Moo leaderboard error")
         bot.say("⚠️ Moo leaderboard error.")
 
 
@@ -565,6 +623,7 @@ def mootop_channel(bot, trigger):
         bot.say(f"🏆 Moo leaderboard in {chan}: {line}")
 
     except Exception:
+        logger.exception("Channel moo leaderboard error")
         bot.say("⚠️ Channel moo leaderboard error.")
 
 
@@ -574,7 +633,6 @@ def mootop_channel(bot, trigger):
 @plugin.commands("totalmoo", "moostats")
 def totalmoo(bot, trigger):
     """Global total & optionally this-channel total (for .moostats)."""
-    # global total
     try:
         if hasattr(bot.db, "session"):
             with bot.db.session() as s:
@@ -589,6 +647,7 @@ def totalmoo(bot, trigger):
             total_global = (row[0] or 0) if row else 0
             conn.close()
     except Exception:
+        logger.exception("Failed to calculate total moos")
         bot.say("⚠️ Failed to calculate total moos.")
         return
 
@@ -598,7 +657,6 @@ def totalmoo(bot, trigger):
     is_channel = _is_channel(chan)
 
     if cmd == "moostats" and is_channel:
-        # include per-channel total
         try:
             if hasattr(bot.db, "session"):
                 with bot.db.session() as s:
@@ -627,7 +685,6 @@ def totalmoo(bot, trigger):
         except Exception:
             bot.say(f"📊 Moo stats — 🌐 total: {total_global:,}")
     else:
-        # .totalmoo or .moostats outside a channel
         bot.say(f"📊 Total moos (🌐 network-wide): {total_global:,}.")
 
 
@@ -679,6 +736,7 @@ def mooreset(bot, trigger):
         else:
             bot.say("🧹 All moo stats have been reset.")
     except Exception:
+        logger.exception("Moo reset failed")
         bot.say("⚠️ Moo reset failed.")
 
 
@@ -706,7 +764,7 @@ def moohelp(bot, trigger):
         f"   • sudo moo → {SUDO_COOLDOWN // 3600} hour per user per channel",
         "",
         "📊 Stats & Commands:",
-        "   • .moocount /.mymoo /.moos [nick]",
+        "   • .moocount /.mymoo [nick]",
         "       → Show moo count 🎯 in this channel + 🌐 total",
         "   • .mootop /.topmoo [N]",
         "       → 🏆 Top mooers (network-wide)",
@@ -729,3 +787,5 @@ def moohelp(bot, trigger):
 
     for line in lines:
         bot.notice(line, target)
+
+
