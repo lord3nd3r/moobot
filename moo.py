@@ -329,7 +329,7 @@ moos = [
     "Permission denied: /dev/moo",
     "dmesg | grep moo",
     "systemd[1]: moo.service failed",
-    "kill -9 moo",
+    "pkill -9 moo",
     "Welcome to Moo GNU/Linux",
     "bash: moo: No such file or pasture",
     "apt install moo",
@@ -361,6 +361,18 @@ legendary_moos = [
     "⚡ THUNDERMOO STRIKES! The ground trembles... ⚡",
     "🧬 Genetic Supercow says: MOO+MOO = MOO² 🧬",
     "👑 KING OF COWS DECLARES: This is a LEGENDARY MOO 👑"
+]
+
+SUDO_BIG_WIN_MSGS = [
+    "🐮 {nick}, the Supercow showers you in clover! +{amt} moos — the herd chants your name!",
+    "🎉 {nick} hit the moo jackpot! +{amt} moos! The pasture throws a party.",
+    "🍀 Lucky bovine day! {nick} gets +{amt} moos. Don't spend it all on hay.",
+]
+
+SUDO_BIG_LOSS_MSGS = [
+    "😬 {nick}, the pasture protested and reclaimed {amt} moos. Oof.",
+    "💩 Bad barn karma! {nick} lost {amt} moos — even the chickens are laughing.",
+    "🕳️ {nick} dropped {amt} moos down a mysterious hole. We're sorry.",
 ]
 
 MILESTONES = {
@@ -489,10 +501,23 @@ def sudo_moo(bot, trigger):
         return
 
     LAST_SUDO[key] = now
-    bot.say("🐄⚡ Super Cow Powers activated! (+10 moos!)")
 
-    # Shared increment: no random moo output; no legendary; +10
-    _handle_moo_increment(bot, nick, chan, legendary=False, say_response=False, inc_override=10)
+    # Outcome probabilities (exclusive ranges):
+    #  - 5% chance: big win (+30 moos)
+    #  - next 10%: big loss (-100 moos)
+    #  - otherwise: normal sudo reward (+10 moos)
+    r = random.random()
+    if r < 0.05:
+        msg = random.choice(SUDO_BIG_WIN_MSGS).format(nick=nick, amt=30)
+        bot.say(msg)
+        _handle_moo_increment(bot, nick, chan, legendary=False, say_response=False, inc_override=30)
+    elif r < 0.15:
+        msg = random.choice(SUDO_BIG_LOSS_MSGS).format(nick=nick, amt=100)
+        bot.say(msg)
+        _handle_moo_increment(bot, nick, chan, legendary=False, say_response=False, inc_override=-100)
+    else:
+        bot.say("🐄⚡ Super Cow Powers activated! (+10 moos!)")
+        _handle_moo_increment(bot, nick, chan, legendary=False, say_response=False, inc_override=10)
 
 
 # --------------------------------------------------------------
